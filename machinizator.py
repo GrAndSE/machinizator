@@ -33,7 +33,14 @@ Example usage:
 """
 
 
-class UnconfiguredStateProperty(Exception):
+class UnconfiguredStateException(Exception):
+    """Exception raised when trying to enter into state or exit from state 
+    which was not configured properly
+    """
+    pass
+
+
+class UnconfiguredStatePropertyException(Exception):
     """Exception raised when init_with(state) method of the StateProperty 
     instance was not called and instance was created with no specified initial
     argument value
@@ -71,9 +78,18 @@ class State(object):
                           prev_state, self.state)
 
     def exit(self, next_state=None):
+        """Exit the state
+        """
+        self.check_configured()
         if self.on_exit is not None:
             self.on_exit(self.property.obj, self.property.name,
                          self.state, next_state)
+
+    def check_configured(self):
+        """
+        """
+        if self.state is None:
+            raise UnconfiguredStateProperty
 
 
 class Event(object):
@@ -119,7 +135,8 @@ class StateProperty(object):
         self.states[old_state].exit(new_state)
         # Process events
         for event in self.events:
-            if event.from_value == old_state and event.to_value == new_state:
+            if (event.from_state.state == old_state and 
+                event.to_state.state == new_state):
                 event()
         # Process enter
         self.states[new_state].enter(new_state)
@@ -140,20 +157,43 @@ class StateProperty(object):
         obj.__dict__[property] = self.initial
 
 
-def StateMachine(cls, **args):
+class StateMachineBase(type):
+    """Metaclass for each StateMachine subclasses
+    """
+
+    def __new__(cls, name, bases, attrs):
+        super_new = super(cls, cls).__new__
+        parents = [b for b in bases if isinstance(b, StateMachineBase)]
+        if not parents:
+            # If this isn't a subclass of Model, don't do anything special.
+            return super_new(cls, name, bases, attrs)
+        # Get all
+        if 'for_class' not in attrs:
+            raise Exception() # TODO: generate good exceptio
+        for_class = attrs['for_class']
+        new_atts = {}
+        new_atts.update()
+        del attrs['for_class']
+        states = {}
+        events = {}
+        for attr_name in attrs:
+            attr = attrs[attr_name]
+            if isinstance(attr, State) or issubclass(attr.__class__, State):
+                attr.state = attr_name
+                states[attr_name] = attr
+            elif isinstance(attr, Event) or issubclass(attr.__class__, Event):
+                new_atts[attr_name] = attr
+        new_atts['__states'] = states
+        print new_atts
+        return super_new(cls, name, bases, new_atts)
+
+
+class StateMachine(object):
     """Create class represents state machine
     """
-    super_new = super(cls, cls).__new__
-    # Get all
-    new_atts = {cls.__dict__}
-    states = {}
-    events = {}
-    for arg_name in args:
-        arg = args[arg_name]
-        if isinstance(arg, State) or issubclass(arg.__class__, State):
-            states[arg_name] = arg
-        elif isinstance(arg, Event) or issubclass(arg.__class__, Event):
-            new_atts[attr_name] = attr
-    new_atts['__states'] = states
-    print new_atts
-    return super_new(cls, name, bases, new_atts)
+    __metaclass__ = StateMachineBase
+
+    def __init__(self):
+        """Create new StateMachine instance. Just inherit from parent
+        """
+        super(StateMachine, self).__init__()
