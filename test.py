@@ -1,4 +1,4 @@
-from machinizer import *
+from machinizator import *
 
 class Test:
     name = "Andy"
@@ -17,11 +17,13 @@ def start_task(obj, name, from_state, to_state):
 class TestStateMachine(StateMachine):
     for_class = Test
 
-    state = StateProperty('default')
+    state = StateProperty()
 
-    default = State()
+    default = State(state)
     working = State(state)
-    waiting = State()
+    waiting = State(state)
+
+    state.init_with(default)
 
     Event(from_state=default, to_state=working)
     Event(from_state=default, to_state=waiting)

@@ -8,13 +8,13 @@ Example usage:
         state = None
 
 
-    def finish_task(obj, name, from_state, to_state):
+    def finish_task(from_state, to_state):
         print "Finish task"
-        print obj, name, from_state, to_state
+        print from_state, to_state
 
-    def start_task(obj, name, from_state, to_state):
+    def start_task(from_state, to_state):
         print "Start task"
-        print obj, name, from_state, to_state       
+        print from_state, to_state       
 
 
     class TestStateMachine(StateMachine):
@@ -33,6 +33,14 @@ Example usage:
 """
 
 
+class UnconfiguredStateProperty(Exception):
+    """Exception raised when init_with(state) method of the StateProperty 
+    instance was not called and instance was created with no specified initial
+    argument value
+    """
+    pass
+
+
 class NoSuchStateException(Exception):
     """Exception called when there is no state for specified value
     """
@@ -43,14 +51,15 @@ class State(object):
     """State representation
     """
 
-    def __init__(self, property=None, on_enter=None, on_exit=None):
+    def __init__(self, property=None, state=None, 
+                 on_enter=None, on_exit=None):
         """Create new state for specified property name and value
 
         Arguments:
             name    property name
         """
         super(State, self).__init__()
-        self.property   = property
+        self.state      = state
         self.on_enter   = on_enter
         self.on_exit    = on_exit
 
@@ -58,20 +67,20 @@ class State(object):
         """Enter the state
         """
         if self.on_enter is not None:
-            self.on_enter(self.property, self.name, 
-                          prev_state. self.property.get())
+            self.on_enter(self.property.obj, self.property.name,
+                          prev_state, self.state)
 
     def exit(self, next_state=None):
         if self.on_exit is not None:
-            self.on_exit(self.property, self.name, 
-                         self.property.get(), next_state)
+            self.on_exit(self.property.obj, self.property.name,
+                         self.state, next_state)
 
 
 class Event(object):
     """Event object representatin changing of the state
     """
 
-    def __init__(self, obj, property, from_value, to_value, task):
+    def __init__(self, from_state, to_state, task=None):
         """Create new event instance
 
         Arguments:
@@ -79,34 +88,34 @@ class Event(object):
             start       - start value for this event
             end         - end value for this event
         """
-        self.obj        = obj
-        self.property   = property
-        self.from_value = from_value
-        self.to_value   = to_value
+        self.from_state = from_state
+        self.to_state   = to_state
         self.task       = task
 
     def __call__(self):
         if self.task is not None:
-            self.task(obj, property, from_value, to_value)
+            self.task(from_state, to_state)
 
 
 class StateProperty(object):
     """Property used 
     """
 
-    def __init__(self, obj, property, states=[]):
+    def __init__(self, initial=None, property=None, states=[], events=[]):
         """Create new state property for specified object property
         """
-        self.obj        = obj
+        self.obj        = None
+        self.initial    = initial
         self.property   = property
-        self.states     = {[(state, State())]}
-        self.events     = []
+        self.states     = {tuple((state, State(property=self, state=state)) 
+                                 for state in states)}
+        self.events     = events
 
     def set(self, new_state):
         """Change state
         """
-        old_state = obj.__dict__[property]
         # Process exit
+        old_state = obj.__dict__[property]
         self.states[old_state].exit(new_state)
         # Process events
         for event in self.events:
@@ -114,29 +123,21 @@ class StateProperty(object):
                 event()
         # Process enter
         self.states[new_state].enter(new_state)
+        obj.__dict__[property] = new_state
 
+    def init_with(self, initial):
+        """Change initial state for this property
+        """
+        self.initial = initial
 
-def add_state_properties(cls, property, initial_value):
-    """Add new state property into list
-
-    Arguments:
-        property        original property
-        initial_value   default value
-    """
-    # Get hidden properties
-    properties_alias = '_%s__state_properties' % cls.__name__
-    if properties_alias not in cls.__dict__:
-        cls.__dict__[properties_alias] = {}
-    properties = cls.__dict__[properties_alias]
-    # Check for dublicate
-    if isinstance(property, str) or issubclass(property.__class__, str):
-        properties[property] = StateProperty()
-    else:
-        if '_uninitializaed_state_properties' not in cls.__dict__:
-            cls.__dict__['_uninitializaed_state_properties'] = [property,]
-        else:
-            cls.__dict__['_uninitializaed_state_properties'].append(property)
-
+    def finish_init(self, obj, property):
+        """Finish property initialization
+        """
+        if self.initial is None:
+            raise UnconfiguredStateProperty()
+        self.obj = obj
+        self.property = property
+        obj.__dict__[property] = self.initial
 
 
 def StateMachine(cls, **args):
