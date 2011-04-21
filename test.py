@@ -1,4 +1,4 @@
-from machinizator import *
+from machinizator import Event, State, StateMachine, StateProperty
 
 class Test:
     name = "Andy"
@@ -25,6 +25,13 @@ class TestStateMachine(StateMachine):
 
     state.init_with(default)
 
-    Event(from_state=default, to_state=working)
-    Event(from_state=default, to_state=waiting)
-    Event(from_state=working, to_state=waiting, task=finish_task)
+    begining_start_task = Event(from_state=default, to_state=working)
+    begining_wait_task = Event(from_state=default, to_state=waiting)
+    end_task_and_wait = Event(from_state=working, to_state=waiting, 
+                              task=finish_task)
+
+test_machine = TestStateMachine()
+print test_machine.state
+print test_machine.is_default()
+test_machine.state = 'waiting'
+print test_machine.is_default(), test_machine.is_waiting()
