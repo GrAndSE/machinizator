@@ -26,12 +26,17 @@ class TestStateMachine(StateMachine):
     state.init_with(default)
 
     begining_start_task = Event(from_state=default, to_state=working)
-    begining_wait_task = Event(from_state=default, to_state=waiting)
+    begining_wait_task = Event(from_state=default, to_state=waiting,
+                               task=start_task)
     end_task_and_wait = Event(from_state=working, to_state=waiting, 
                               task=finish_task)
 
 test_machine = TestStateMachine()
-print test_machine.state
-print test_machine.is_default()
+assert test_machine.is_default(), 'Default was not sent as initial value'
 test_machine.state = 'waiting'
-print test_machine.is_default(), test_machine.is_waiting()
+assert not test_machine.is_default(), 'Waiting requires is_default() == False'
+assert test_machine.is_waiting(), 'Waiting requires is_waiting() == True'
+test_machine.state = 'working'
+assert not test_machine.is_waiting() and test_machine.is_working(), 'E:working'
+test_machine.state = 'waiting'
+assert test_machine.is_waiting() and not test_machine.is_working(), 'E:working'

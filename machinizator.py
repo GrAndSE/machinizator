@@ -31,7 +31,6 @@ Example usage:
         Event(from_state=working, to_state=waiting, task=finish_task)
 
 """
-from functools import partial
 
 
 class UnconfiguredStateException(Exception):
@@ -70,6 +69,9 @@ class State(object):
         self.state      = state
         self.on_enter   = on_enter
         self.on_exit    = on_exit
+        self.property   = property
+        if state is not None:
+            property.states[state] = self
 
     def enter(self, obj, prev_state=None):
         """Enter the state
@@ -78,7 +80,7 @@ class State(object):
         if self.on_enter is not None:
             self.on_enter(obj, prev_state, self.state)
 
-    def exit(self, next_state=None):
+    def exit(self, obj, next_state=None):
         """Exit the state
         """
         self.check_configured()
@@ -89,7 +91,12 @@ class State(object):
         """Check is State properly configured
         """
         if self.state is None:
-            raise UnconfiguredStateProperty
+            raise UnconfiguredStatePropertyException()
+
+    def __str__(self):
+        """Get a straing representation
+        """
+        return "%s: %s" % (self.property.property, self.state)
 
 
 class Event(object):
@@ -107,10 +114,13 @@ class Event(object):
         self.from_state = from_state
         self.to_state   = to_state
         self.task       = task
+        # Add event to state property
+        self.from_state.property.events.append(self)
 
-    def __call__(self):
+    def __call__(self, obj):
         if self.task is not None:
-            self.task(from_state, to_state)
+            self.task(obj, self.from_state.property.property,  
+                      self.from_state, self.to_state)
 
 
 class StateProperty(object):
@@ -123,15 +133,15 @@ class StateProperty(object):
         self.obj        = None
         self.initial    = initial
         self.property   = property
-        self.states     = {tuple((state, State(property=self, state=state)) 
-                                 for state in states)}
+        self.states     = dict(((state, State(property=self, state=state)) 
+                                 for state in states))
         self.events     = events
 
     def set(self, obj, new_state):
         """Change state
         """
         # Process exit
-        old_state = obj.__dict__[property]
+        old_state = obj.__dict__[self.property]
         self.states[old_state].exit(new_state)
         # Process events
         for event in self.events:
@@ -140,7 +150,7 @@ class StateProperty(object):
                 event(obj)
         # Process enter
         self.states[new_state].enter(new_state)
-        obj.__dict__[property] = new_state
+        obj.__dict__[self.property] = new_state
 
     def init_with(self, initial):
         """Change initial state for this property
@@ -151,7 +161,7 @@ class StateProperty(object):
         """Finish property initialization
         """
         if self.initial is None:
-            raise UnconfiguredStateProperty()
+            raise UnconfiguredStatePropertyException()
         self.property = property
         obj.__dict__[property] = self.initial.state
 
@@ -191,7 +201,6 @@ class StateMachineBase(type):
                 attr.state = attr_name
                 states[attr_name] = attr
                 new_attrs['is_%s' % attr_name] = is_state(attr_name)
-                print partial(is_state, state=attr_name)
             elif isinstance(attr, Event) or issubclass(attr.__class__, Event):
                 events[attr_name] = attr
             elif (isinstance(attr, StateProperty) or 
@@ -199,6 +208,14 @@ class StateMachineBase(type):
                 properties[attr_name] = attr
             else:
                 new_attrs[attr_name] = attr
+        # Apply states to state properties
+        for state_name in states:
+            state = states[state_name]
+            state.property.states[state.state] = state
+        # Apply events to states
+        for event_name in events:
+            event = events[event_name]
+            event
         # Put all into new class attributes
         new_attrs['_StateMachine__states'] = states
         new_attrs['_StateMachine__events'] = events
@@ -224,6 +241,6 @@ class StateMachine(object):
         property run full procedure
         """
         if name in self.__properties:
-            # TODO: add event processing here
-            pass
-        super(StateMachine, self).__setattr__(name, value)
+            self.__properties[name].set(self, value)
+        else:
+            super(StateMachine, self).__setattr__(name, value)
